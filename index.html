@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#171a1e">
+  <title>Stick Duel POC</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; background: #101215; color: #eae8df; }
+    body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; font: 14px system-ui, sans-serif; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 2px max(10px, env(safe-area-inset-right)) 2px max(10px, env(safe-area-inset-left)); }
+    header span { color: #dbbd7e; }
+    button { min-height: 32px; padding: 4px 12px; background: #24282d; color: inherit; border: 1px solid #6c747d; border-radius: 4px; cursor: pointer; }
+    main { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+    canvas { display: block; border: 0; outline: none; touch-action: none; }
+    #status { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; background: #171a1e; text-align: center; white-space: pre-line; }
+    #status[hidden] { display: none; }
+    progress { width: min(320px, 80%); }
+    @media (orientation: portrait) { header span { max-width: 210px; } }
+  </style>
+  
+</head>
+<body>
+  <header><span>Stick Duel · On phone, use landscape</span><button id="fullscreen" type="button">Full screen</button></header>
+  <main id="stage">
+    <canvas id="canvas" width="1280" height="720" tabindex="0" aria-label="Stick Duel game">A browser with canvas support is required.</canvas>
+    <div id="status" role="status"><span id="notice">Loading Stick Duel…</span><progress id="progress"></progress></div>
+  </main>
+  <noscript>Enable JavaScript to play Stick Duel.</noscript>
+  <script src="index.js"></script>
+  <script>
+    const config = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":3821320,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+    const canvas = document.getElementById('canvas');
+    const stage = document.getElementById('stage');
+    const status = document.getElementById('status');
+    const notice = document.getElementById('notice');
+    const progress = document.getElementById('progress');
+    const fullscreen = document.getElementById('fullscreen');
+
+    // Keep the project's 1280 × 720 coordinates. Only CSS size changes: HUD,
+    // input mapping and the shared 3D viewports retain the same layout as F5.
+    function fitCanvas() {
+      const style = getComputedStyle(stage);
+      const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const height = stage.clientHeight - parseFloat(style.paddingBottom);
+      const scale = Math.max(0, Math.min(width / canvas.width, height / canvas.height));
+      canvas.style.width = `${canvas.width * scale}px`;
+      canvas.style.height = `${canvas.height * scale}px`;
+    }
+    new ResizeObserver(fitCanvas).observe(stage);
+    fitCanvas();
+    canvas.addEventListener('contextmenu', event => event.preventDefault());
+    fullscreen.hidden = !document.fullscreenEnabled;
+    fullscreen.addEventListener('click', async () => {
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await document.documentElement.requestFullscreen();
+        canvas.focus();
+      } catch (error) { console.warn('Full screen unavailable:', error); }
+    });
+    document.addEventListener('fullscreenchange', () => {
+      fullscreen.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+    });
+
+    function failure(error) {
+      console.error(error);
+      status.hidden = false;
+      progress.hidden = true;
+      notice.textContent = `Could not start Stick Duel.\n${error.message || error}\nTry reloading in a current browser with WebGL 2 enabled.`;
+    }
+    try {
+      const missing = Engine.getMissingFeatures({ threads: false });
+      if (missing.length) throw new Error(`Missing browser features: ${missing.join(', ')}`);
+      const engine = new Engine(config);
+      engine.startGame({
+        canvas,
+        onProgress(current, total) {
+          if (total > 0) { progress.max = total; progress.value = current; }
+          else progress.removeAttribute('value');
+        },
+        onExit(code) { failure(new Error(`Game exited (code ${code}).`)); },
+      }).then(() => { status.hidden = true; fitCanvas(); }, failure);
+    } catch (error) { failure(error); }
+  </script>
+</body>
+</html>
+
