@@ -30,7 +30,7 @@
   <noscript>Enable JavaScript to play Stick Duel.</noscript>
   <script src="index.js"></script>
   <script>
-    const config = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":102676648,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+    const config = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":55490656,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
     const canvas = document.getElementById('canvas');
     const stage = document.getElementById('stage');
     const status = document.getElementById('status');
@@ -38,8 +38,9 @@
     const progress = document.getElementById('progress');
     const fullscreen = document.getElementById('fullscreen');
 
-    // Keep the project's 1280 × 720 coordinates. Only CSS size changes: HUD,
-    // input mapping and the shared 3D viewports retain the same layout as F5.
+    // Keep the project's 1280 × 720 coordinates. CSS only fits the canvas; the
+    // backing store is the render resolution, 1280 × 720 unless the desktop
+    // SETTINGS choice (#118) asks the shell for more real pixels.
     function fitCanvas() {
       const style = getComputedStyle(stage);
       const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
@@ -50,15 +51,23 @@
     }
     new ResizeObserver(fitCanvas).observe(stage);
     fitCanvas();
+    // Godot (canvas_resize_policy none) follows the new backing size next frame.
+    window.stickDuelSetRenderSize = (width, height) => {
+      if (canvas.width === width && canvas.height === height) return;
+      canvas.width = width;
+      canvas.height = height;
+      fitCanvas();
+    };
     canvas.addEventListener('contextmenu', event => event.preventDefault());
     fullscreen.hidden = !document.fullscreenEnabled;
-    fullscreen.addEventListener('click', async () => {
+    window.stickDuelToggleFullscreen = async () => {
       try {
         if (document.fullscreenElement) await document.exitFullscreen();
         else await document.documentElement.requestFullscreen();
         canvas.focus();
       } catch (error) { console.warn('Full screen unavailable:', error); }
-    });
+    };
+    fullscreen.addEventListener('click', window.stickDuelToggleFullscreen);
     document.addEventListener('fullscreenchange', () => {
       fullscreen.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
     });
@@ -69,19 +78,59 @@
       progress.hidden = true;
       notice.textContent = `Could not start Stick Duel.\n${error.message || error}\nTry reloading in a current browser with WebGL 2 enabled.`;
     }
-    try {
+    // Repeat starts (#119): phone HTTP caches drop entries this large, so each
+    // opening downloaded the whole pack again. Keep this build's payloads in
+    // Cache Storage, keyed by its published commit and exact sizes. Anything
+    // unexpected falls back to the ordinary network path.
+    async function payloadCache() {
+      try {
+        const response = await fetch('commit.txt', { cache: 'no-store' });
+        const commit = response.ok ? (await response.text()).trim() : '';
+        if (!/^[0-9a-f]{40}$/.test(commit) || !window.caches) return null;
+        const name = `stick-duel-${commit}`;
+        for (const key of await caches.keys()) {
+          if (key.startsWith('stick-duel-') && key !== name) await caches.delete(key);
+        }
+        return await caches.open(name);
+      } catch (error) { return null; }
+    }
+    function cachePayloads(cache) {
+      const network = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const size = typeof input === 'string' ? config.fileSizes[input] : undefined;
+        if (!size) return network(input, init);
+        try {
+          const hit = await cache.match(input);
+          const body = hit && await hit.blob();
+          if (body && body.size === size) return new Response(body, { headers: hit.headers });
+        } catch (error) { console.warn('Payload cache unavailable:', error); }
+        const response = await network(input, init);
+        if (response.ok) {
+          const type = response.headers.get('Content-Type') || 'application/octet-stream';
+          response.clone().blob().then(body => body.size === size
+            && cache.put(input, new Response(body, { headers: { 'Content-Type': type } })))
+            .catch(error => console.warn('Could not keep payload:', error));
+        }
+        return response;
+      };
+    }
+    (async () => {
       const missing = Engine.getMissingFeatures({ threads: false });
       if (missing.length) throw new Error(`Missing browser features: ${missing.join(', ')}`);
+      const cache = await payloadCache();
+      if (cache) cachePayloads(cache);
       const engine = new Engine(config);
-      engine.startGame({
+      await engine.startGame({
         canvas,
         onProgress(current, total) {
           if (total > 0) { progress.max = total; progress.value = current; }
           else progress.removeAttribute('value');
         },
         onExit(code) { failure(new Error(`Game exited (code ${code}).`)); },
-      }).then(() => { status.hidden = true; fitCanvas(); }, failure);
-    } catch (error) { failure(error); }
+      });
+      status.hidden = true;
+      fitCanvas();
+    })().catch(failure);
   </script>
 </body>
 </html>
