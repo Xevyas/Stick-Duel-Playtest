@@ -30,7 +30,7 @@
   <noscript>Enable JavaScript to play Stick Duel.</noscript>
   <script src="index.js"></script>
   <script>
-    const config = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":55490656,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+    const config = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":70751004,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
     const canvas = document.getElementById('canvas');
     const stage = document.getElementById('stage');
     const status = document.getElementById('status');
@@ -38,9 +38,8 @@
     const progress = document.getElementById('progress');
     const fullscreen = document.getElementById('fullscreen');
 
-    // Keep the project's 1280 × 720 coordinates. CSS only fits the canvas; the
-    // backing store is the render resolution, 1280 × 720 unless the desktop
-    // SETTINGS choice (#118) asks the shell for more real pixels.
+    // Keep the project's 1280 × 720 coordinates. Only CSS size changes: HUD,
+    // input mapping and the shared 3D viewports retain the same layout as F5.
     function fitCanvas() {
       const style = getComputedStyle(stage);
       const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
@@ -51,23 +50,15 @@
     }
     new ResizeObserver(fitCanvas).observe(stage);
     fitCanvas();
-    // Godot (canvas_resize_policy none) follows the new backing size next frame.
-    window.stickDuelSetRenderSize = (width, height) => {
-      if (canvas.width === width && canvas.height === height) return;
-      canvas.width = width;
-      canvas.height = height;
-      fitCanvas();
-    };
     canvas.addEventListener('contextmenu', event => event.preventDefault());
     fullscreen.hidden = !document.fullscreenEnabled;
-    window.stickDuelToggleFullscreen = async () => {
+    fullscreen.addEventListener('click', async () => {
       try {
         if (document.fullscreenElement) await document.exitFullscreen();
         else await document.documentElement.requestFullscreen();
         canvas.focus();
       } catch (error) { console.warn('Full screen unavailable:', error); }
-    };
-    fullscreen.addEventListener('click', window.stickDuelToggleFullscreen);
+    });
     document.addEventListener('fullscreenchange', () => {
       fullscreen.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
     });
